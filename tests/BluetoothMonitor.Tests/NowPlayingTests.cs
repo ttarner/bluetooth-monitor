@@ -88,4 +88,35 @@ public sealed class NowPlayingTests
         Assert.IsTrue(viewModel.IsVisible);
         Assert.IsFalse(viewModel.HasMediaTag);
     }
+
+    [TestMethod]
+    public void PopularAnimeThemes_FindsDirectMatches()
+    {
+        var matchGurenge = PopularAnimeThemes.FindMatch("Gurenge", "LiSA");
+        Assert.AreEqual("Anime opening · Demon Slayer: Kimetsu no Yaiba", matchGurenge);
+
+        var matchZankyosanka = PopularAnimeThemes.FindMatch("残響散歌", "Aimer");
+        Assert.AreEqual("Anime opening · Demon Slayer: Kimetsu no Yaiba – Entertainment District Arc", matchZankyosanka);
+
+        var matchKickBack = PopularAnimeThemes.FindMatch("KICK BACK", "Kenshi Yonezu");
+        Assert.AreEqual("Anime opening · Chainsaw Man", matchKickBack);
+
+        var matchIdol = PopularAnimeThemes.FindMatch("アイドル", "YOASOBI");
+        Assert.AreEqual("Anime opening · [OSHI NO KO]", matchIdol);
+    }
+
+    [TestMethod]
+    public void PopularAnimeThemes_ReturnsNullWhenUnknown()
+    {
+        var match = PopularAnimeThemes.FindMatch("Midnight City", "M83");
+        Assert.IsNull(match);
+    }
+
+    [TestMethod]
+    public async Task AnimeThemesService_ResolvesCatalogMatchImmediately()
+    {
+        var service = new AnimeThemesService();
+        var result = await service.ClassifyAsync("Kaibutsu", "YOASOBI", "THE BOOK 2");
+        Assert.AreEqual("Anime opening · BEASTARS Season 2", result);
+    }
 }

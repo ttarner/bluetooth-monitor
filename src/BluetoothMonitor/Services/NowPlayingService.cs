@@ -163,12 +163,22 @@ public sealed class WindowsNowPlayingService : INowPlayingService
             }
 
             var title = properties.Title.Trim();
+            var romajiTitle = "";
+            try
+            {
+                romajiTitle = JapaneseTitleRomanizer.Romanize(title);
+            }
+            catch (Exception ex)
+            {
+                SimpleLogger.Log($"Romanization unavailable: {ex.Message}");
+            }
+
             return new NowPlayingSnapshot(
                 title,
                 artist.Trim(),
                 session.SourceAppUserModelId ?? "",
                 mediaTag,
-                JapaneseTitleRomanizer.Romanize(title));
+                romajiTitle);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

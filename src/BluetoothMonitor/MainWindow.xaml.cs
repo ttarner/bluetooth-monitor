@@ -58,6 +58,11 @@ public partial class MainWindow : Window
     private HwndSource? _source;
     private Forms.NotifyIcon? _trayIcon;
     private readonly Dictionary<OverlayPosition, Forms.ToolStripMenuItem> _trayOverlayPositionItems = [];
+    private readonly IUpdateService _updateService = new UpdateService();
+    private UpdateInfo? _latestUpdateInfo;
+    private Forms.ToolStripMenuItem? _trayUpdateMenuItem;
+    private readonly System.Windows.Threading.DispatcherTimer _periodicUpdateTimer = new();
+    private bool _isUpdating;
     private bool _exitRequested;
     private bool _initializingSettings = true;
     private readonly bool _launchedAtStartup;
@@ -79,6 +84,8 @@ public partial class MainWindow : Window
         StartWithWindowsCheckBox.IsChecked = _settings.StartWithWindows;
         ShowOverlayOnStartupCheckBox.IsChecked = _settings.ShowOverlayOnStartup;
         KeepRunningInTrayOnCloseCheckBox.IsChecked = _settings.KeepRunningInTrayOnClose;
+        AutoCheckForUpdatesCheckBox.IsChecked = _settings.AutoCheckForUpdates;
+        CurrentVersionTextBlock.Text = $"v{_updateService.CurrentVersion}";
         LowBatteryThresholdSlider.Value = _settings.LowBatteryThreshold;
         LowBatteryThresholdValueText.Text = $"{_settings.LowBatteryThreshold}%";
         OverlayScaleSlider.Value = _settings.OverlayScale * 100d;
@@ -141,6 +148,7 @@ public partial class MainWindow : Window
             UpdateDeviceStatusText();
             UpdateEmptyState();
         };
+        InitializeUpdateSchedule();
         Loaded += OnLoaded;
         StateChanged += (_, _) =>
         {
@@ -190,6 +198,8 @@ public partial class MainWindow : Window
         menu.Items.Add("Open Bluetooth Monitor", null, (_, _) => Dispatcher.Invoke(ShowMainWindow));
         menu.Items.Add("Toggle overlay", null, (_, _) => Dispatcher.Invoke(ToggleOverlay));
         menu.Items.Add(CreateOverlayPositionTrayMenu());
+        _trayUpdateMenuItem = new Forms.ToolStripMenuItem("Check for updates...", null, (_, _) => Dispatcher.Invoke(PromptOrShowUpdate));
+        menu.Items.Add(_trayUpdateMenuItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => Dispatcher.Invoke(ExitApplication));
 
@@ -201,6 +211,7 @@ public partial class MainWindow : Window
             Visible = true
         };
         _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(ShowMainWindow);
+        _trayIcon.BalloonTipClicked += (_, _) => Dispatcher.Invoke(PromptOrShowUpdate);
     }
 
     private Forms.ToolStripMenuItem CreateOverlayPositionTrayMenu()
@@ -399,6 +410,7 @@ public partial class MainWindow : Window
         _settings.ShowNetworkOutOverlay = ShowNetworkOutOverlayCheckBox.IsChecked == true;
         _settings.ShowNowPlayingInOverlay = ShowNowPlayingInOverlayCheckBox.IsChecked == true;
         _settings.ShowAnimeInfoInOverlay = ShowAnimeInfoInOverlayCheckBox.IsChecked == true;
+        _settings.AutoCheckForUpdates = AutoCheckForUpdatesCheckBox.IsChecked == true;
         _settings.Save();
         StartupManager.SetEnabled(_settings.StartWithWindows);
         _overlay?.ApplySystemWidgetSettings(_settings);
@@ -1155,6 +1167,184 @@ public partial class MainWindow : Window
 
         geometry.Freeze();
         return geometry;
+    }
+
+    private void InitializeUpdateSchedule()
+    {
+        if (_settings.AutoCheckForUpdates)
+        {
+            var startupTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+            startupTimer.Tick += async (_, _) =>
+            {
+                startupTimer.Stop();
+                if (_settings.AutoCheckForUpdates)
+                    await CheckForUpdatesAsync(silent: true);
+            };
+            startupTimer.Start();
+        }
+
+        _periodicUpdateTimer.Interval = TimeSpan.FromHours(6);
+        _periodicUpdateTimer.Tick += async (_, _) =>
+        {
+            if (_settings.AutoCheckForUpdates)
+                await CheckForUpdatesAsync(silent: true);
+        };
+        _periodicUpdateTimer.Start();
+    }
+
+    private async void CheckForUpdatesButton_Click(object sender, RoutedEventArgs e)
+    {
+        await CheckForUpdatesAsync(silent: false);
+    }
+
+    private async void InstallUpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_latestUpdateInfo is not null)
+        {
+            await PerformUpdateDownloadAndApplyAsync(_latestUpdateInfo);
+        }
+    }
+
+    private async Task CheckForUpdatesAsync(bool silent)
+    {
+        if (_isUpdating) return;
+
+        if (!silent)
+        {
+            CheckForUpdatesButton.IsEnabled = false;
+            UpdateStatusContainer.Visibility = Visibility.Visible;
+            UpdateStatusTitleTextBlock.Text = "Checking for updates...";
+            UpdateStatusDetailTextBlock.Text = "Connecting to GitHub Releases...";
+            InstallUpdateButton.Visibility = Visibility.Collapsed;
+            UpdateDownloadProgressBar.Visibility = Visibility.Collapsed;
+        }
+
+        var result = await _updateService.CheckForUpdatesAsync();
+        _settings.LastUpdateCheckUtc = DateTimeOffset.UtcNow;
+        _settings.Save();
+
+        if (result.UpdateAvailable && result.Update is not null)
+        {
+            _latestUpdateInfo = result.Update;
+            UpdateStatusContainer.Visibility = Visibility.Visible;
+            UpdateStatusTitleTextBlock.Text = $"Update available: v{result.Update.Version}";
+            UpdateStatusDetailTextBlock.Text = string.IsNullOrWhiteSpace(result.Update.ReleaseName)
+                ? "A new version of Bluetooth Battery Monitor is available."
+                : result.Update.ReleaseName;
+            InstallUpdateButton.Visibility = Visibility.Visible;
+            InstallUpdateButton.IsEnabled = true;
+
+            if (_trayUpdateMenuItem is not null)
+            {
+                _trayUpdateMenuItem.Text = $"🌟 Update available: v{result.Update.Version}";
+            }
+
+            if (_trayIcon is not null)
+            {
+                _trayIcon.ShowBalloonTip(
+                    6000,
+                    "Update Available",
+                    $"Bluetooth Battery Monitor v{result.Update.Version} is available. Click here to install.",
+                    Forms.ToolTipIcon.Info);
+            }
+        }
+        else if (result.ErrorMessage is not null)
+        {
+            if (!silent)
+            {
+                UpdateStatusContainer.Visibility = Visibility.Visible;
+                UpdateStatusTitleTextBlock.Text = "Check failed";
+                UpdateStatusDetailTextBlock.Text = result.ErrorMessage;
+                InstallUpdateButton.Visibility = Visibility.Collapsed;
+            }
+        }
+        else
+        {
+            _latestUpdateInfo = null;
+            if (_trayUpdateMenuItem is not null)
+            {
+                _trayUpdateMenuItem.Text = "Check for updates...";
+            }
+
+            if (!silent)
+            {
+                UpdateStatusContainer.Visibility = Visibility.Visible;
+                UpdateStatusTitleTextBlock.Text = "You're up to date";
+                UpdateStatusDetailTextBlock.Text = $"Bluetooth Battery Monitor v{_updateService.CurrentVersion} is the latest version.";
+                InstallUpdateButton.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        if (!silent)
+        {
+            CheckForUpdatesButton.IsEnabled = true;
+        }
+    }
+
+    private async Task PerformUpdateDownloadAndApplyAsync(UpdateInfo update)
+    {
+        if (_isUpdating) return;
+        _isUpdating = true;
+
+        try
+        {
+            CheckForUpdatesButton.IsEnabled = false;
+            InstallUpdateButton.IsEnabled = false;
+            UpdateStatusContainer.Visibility = Visibility.Visible;
+            UpdateStatusTitleTextBlock.Text = "Downloading update...";
+            UpdateStatusDetailTextBlock.Text = "Starting download...";
+            UpdateDownloadProgressBar.Visibility = Visibility.Visible;
+            UpdateDownloadProgressBar.Value = 0;
+
+            var progress = new Progress<double>(percent =>
+            {
+                UpdateDownloadProgressBar.Value = percent * 100d;
+                UpdateStatusDetailTextBlock.Text = $"Downloading update: {(int)Math.Round(percent * 100d)}%";
+            });
+
+            var downloadedExePath = await _updateService.DownloadUpdateAsync(update, progress);
+
+            UpdateStatusTitleTextBlock.Text = "Applying update...";
+            UpdateStatusDetailTextBlock.Text = "Restarting Bluetooth Battery Monitor...";
+
+            _updateService.ApplyUpdateAndRestart(downloadedExePath);
+        }
+        catch (Exception ex)
+        {
+            _isUpdating = false;
+            CheckForUpdatesButton.IsEnabled = true;
+            InstallUpdateButton.IsEnabled = true;
+            UpdateDownloadProgressBar.Visibility = Visibility.Collapsed;
+            UpdateStatusTitleTextBlock.Text = "Update failed";
+            UpdateStatusDetailTextBlock.Text = $"Error downloading or applying update: {ex.Message}";
+        }
+    }
+
+    private async void PromptOrShowUpdate()
+    {
+        if (_latestUpdateInfo is not null)
+        {
+            var result = System.Windows.MessageBox.Show(
+                $"A new version (v{_latestUpdateInfo.Version}) of Bluetooth Battery Monitor is available.\n\n" +
+                $"Release: {_latestUpdateInfo.ReleaseName}\n\n" +
+                "Would you like to download and install the update now?",
+                "Bluetooth Battery Monitor Update",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                ShowMainWindow();
+                ShowSettingsView();
+                await PerformUpdateDownloadAndApplyAsync(_latestUpdateInfo);
+            }
+        }
+        else
+        {
+            ShowMainWindow();
+            ShowSettingsView();
+            await CheckForUpdatesAsync(silent: false);
+        }
     }
 
     [DllImport("user32.dll")]

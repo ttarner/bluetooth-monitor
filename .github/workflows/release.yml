@@ -30,6 +30,14 @@ jobs:
       - name: Restore
         run: dotnet restore BluetoothMonitor.sln
 
+      - name: Compute release tag
+        shell: pwsh
+        run: |
+          $shortSha = "${env:GITHUB_SHA}".Substring(0, 7)
+          $releaseDate = Get-Date -AsUTC -Format 'yyyy.MM.dd'
+          $releaseTag = "$releaseDate-$shortSha"
+          "RELEASE_TAG=$releaseTag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Publish single-file executable
         run: >
           dotnet publish src/BluetoothMonitor/BluetoothMonitor.csproj
@@ -39,6 +47,7 @@ jobs:
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:EnableCompressionInSingleFile=true
+          -p:InformationalVersion="${{ env.RELEASE_TAG }}"
           --output artifacts/win-x64
 
       - name: Package zip asset

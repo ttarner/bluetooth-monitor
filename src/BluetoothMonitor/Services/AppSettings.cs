@@ -48,6 +48,8 @@ public sealed class AppSettings
     public int LowBatteryThreshold { get; set; } = DefaultLowBatteryThreshold;
     public Dictionary<string, bool> DeviceOverlayVisibility { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> DeviceAliases { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool AutoCheckForUpdates { get; set; } = true;
+    public DateTimeOffset? LastUpdateCheckUtc { get; set; }
 
     public static AppSettings Load()
     {

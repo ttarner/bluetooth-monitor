@@ -156,4 +156,30 @@ public sealed class NowPlayingTests
         var matchPokemon = PopularAnimeThemes.FindMatch("めざせポケモンマスター", "Rica Matsumoto");
         Assert.AreEqual("Anime opening · Pokémon (Original Series)", matchPokemon);
     }
+
+    [TestMethod]
+    public void PopularAnimeThemes_MatchesMobPsychoThemes()
+    {
+        var match1 = PopularAnimeThemes.FindMatch("1", "MOB CHOIR");
+        Assert.AreEqual("Anime opening · Mob Psycho 100 III", match1);
+
+        var match99 = PopularAnimeThemes.FindMatch("99", "MOB CHOIR");
+        Assert.AreEqual("Anime opening · Mob Psycho 100", match99);
+
+        var match999 = PopularAnimeThemes.FindMatch("99.9", "MOB CHOIR feat. sajou no hana");
+        Assert.AreEqual("Anime opening · Mob Psycho 100 II", match999);
+
+        var matchCobalt = PopularAnimeThemes.FindMatch("Cobalt", "MOB CHOIR");
+        Assert.AreEqual("Anime ending · Mob Psycho 100 III", matchCobalt);
+    }
+
+    [TestMethod]
+    public void PopularAnimeThemes_DoesNotFalselyMatchShortKeywords()
+    {
+        var falseMatch = PopularAnimeThemes.FindMatch("Track 1", "Random Artist");
+        Assert.IsNull(falseMatch);
+
+        var falseMatchArtist = PopularAnimeThemes.FindMatch("Track 1", "MOB CHOIR");
+        Assert.IsNull(falseMatchArtist);
+    }
 }

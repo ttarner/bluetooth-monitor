@@ -39,6 +39,7 @@ public partial class OverlayWindow : Window
     private readonly CancellationTokenSource _temperatureCancellation = new();
     private readonly CancellationTokenSource _nowPlayingCancellation = new();
     private bool _hasPositionedOnce;
+    private bool _isUpdatingNowPlaying;
 
     public OverlayWindow(
         ObservableCollection<BluetoothDeviceViewModel> devices,
@@ -79,6 +80,11 @@ public partial class OverlayWindow : Window
         DataContext = _viewModel;
         ApplyWidgetOrderSettings(settings);
         ApplyAppearanceSettings(settings);
+        _viewModel.NowPlaying.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(NowPlayingOverlayViewModel.IsVisible))
+                Dispatcher.BeginInvoke(PositionOverlay, DispatcherPriority.Loaded);
+        };
         _systemWidgetTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1)
@@ -249,11 +255,15 @@ public partial class OverlayWindow : Window
     private async Task UpdateNowPlayingAsync()
     {
         if (!_viewModel.NowPlaying.IsEnabled)
+        if (_isUpdatingNowPlaying || !_viewModel.NowPlaying.IsEnabled)
             return;
 
+        _isUpdatingNowPlaying = true;
         try
         {
             _viewModel.NowPlaying.Apply(await _nowPlayingService.GetCurrentAsync(_nowPlayingCancellation.Token));
+            var snapshot = await _nowPlayingService.GetCurrentAsync(_nowPlayingCancellation.Token);
+            _viewModel.NowPlaying.Apply(snapshot);
         }
         catch (OperationCanceledException) when (_nowPlayingCancellation.IsCancellationRequested)
         {
@@ -261,6 +271,11 @@ public partial class OverlayWindow : Window
         catch
         {
             _viewModel.NowPlaying.Apply(null);
+            // Do not discard currently displayed track on a transient polling error
+        }
+        finally
+        {
+            _isUpdatingNowPlaying = false;
         }
 
         if (_viewModel.NowPlaying.IsEnabled && !_nowPlayingTimer.IsEnabled)

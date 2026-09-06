@@ -34,16 +34,101 @@ public sealed class WindowsNowPlayingService : INowPlayingService
         cancellationToken.ThrowIfCancellationRequested();
         var manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
         foreach (var session in manager.GetSessions())
+        try
         {
             cancellationToken.ThrowIfCancellationRequested();
             var playbackStatus = session.GetPlaybackInfo().PlaybackStatus;
+            var manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+            if (manager is null)
+                return null;
+
+            // 1. Check current active session first
+            var currentSession = manager.GetCurrentSession();
+            if (currentSession is not null)
+            {
+                var currentSnapshot = await TryExtractSnapshotAsync(currentSession, cancellationToken);
+                if (currentSnapshot is not null)
+                    return currentSnapshot;
+            }
+
+            // 2. Fall back to inspecting all sessions: check playing sessions first, then paused
+            var sessions = manager.GetSessions();
+            if (sessions is null || sessions.Count == 0)
+                return null;
+
+            foreach (var session in sessions)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (session is null) continue;
+                try
+                {
+                    var playbackInfo = session.GetPlaybackInfo();
+                    if (playbackInfo?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
+                    {
+                        var snapshot = await TryExtractSnapshotAsync(session, cancellationToken);
+                        if (snapshot is not null)
+                            return snapshot;
+                    }
+                }
+                catch
+                {
+                    // Ignore transient COM errors on specific session
+                }
+            }
+
+            foreach (var session in sessions)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (session is null) continue;
+                try
+                {
+                    var playbackInfo = session.GetPlaybackInfo();
+                    if (playbackInfo?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused)
+                    {
+                        var snapshot = await TryExtractSnapshotAsync(session, cancellationToken);
+                        if (snapshot is not null)
+                            return snapshot;
+                    }
+                }
+                catch
+                {
+                    // Ignore transient COM errors on specific session
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private async Task<NowPlayingSnapshot?> TryExtractSnapshotAsync(
+        GlobalSystemMediaTransportControlsSession session,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var playbackInfo = session.GetPlaybackInfo();
+            if (playbackInfo is null)
+                return null;
+
+            var playbackStatus = playbackInfo.PlaybackStatus;
             if (playbackStatus is not (GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing
                 or GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused))
                 continue;
+                return null;
 
             var properties = await session.TryGetMediaPropertiesAsync();
             if (string.IsNullOrWhiteSpace(properties.Title))
                 continue;
+            if (properties is null || string.IsNullOrWhiteSpace(properties.Title))
+                return null;
 
             var artist = properties.Artist ?? properties.AlbumArtist ?? "";
             var mediaTag = await _animeThemeService.ClassifyAsync(
@@ -51,16 +136,44 @@ public sealed class WindowsNowPlayingService : INowPlayingService
                 artist,
                 properties.AlbumTitle,
                 cancellationToken);
+            string mediaTag = "";
+            try
+            {
+                mediaTag = await _animeThemeService.ClassifyAsync(
+                    properties.Title,
+                    artist,
+                    properties.AlbumTitle,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // Classification failure must NEVER hide the playing track!
+                mediaTag = "";
+            }
+
             var title = properties.Title.Trim();
             return new NowPlayingSnapshot(
                 title,
                 artist.Trim(),
                 session.SourceAppUserModelId,
+                session.SourceAppUserModelId ?? "",
                 mediaTag,
                 JapaneseTitleRomanizer.Romanize(title));
         }
 
         return null;
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
 
@@ -179,6 +292,11 @@ public static class PopularAnimeThemes
         new(["dan dan 心魅かれてく", "dan dan kokoro hikareteku"], ["field of view"], "Dragon Ball GT", "Dragon Ball GT", "Opening", "OP1"),
         new(["めざせポケモンマスター", "mezase pokemon master"], ["rica matsumoto"], "Pokémon (Original Series)", "Pokémon (Original Series)", "Opening", "OP1"),
         new(["only my railgun"], ["fripside"], "A Certain Scientific Railgun", "A Certain Scientific Railgun", "Opening", "OP1")
+        new(["only my railgun"], ["fripside"], "A Certain Scientific Railgun", "A Certain Scientific Railgun", "Opening", "OP1"),
+        new(["1"], ["mob choir"], "Mob Psycho 100 III", "Mob Psycho 100 III", "Opening", "OP1"),
+        new(["99"], ["mob choir"], "Mob Psycho 100", "Mob Psycho 100", "Opening", "OP1"),
+        new(["99.9"], ["mob choir"], "Mob Psycho 100 II", "Mob Psycho 100 II", "Opening", "OP1"),
+        new(["cobalt", "コバルト"], ["mob choir"], "Mob Psycho 100 III", "Mob Psycho 100 III", "Ending", "ED1")
     ];
 
     public static string? FindMatch(string title, string artist)
@@ -208,6 +326,7 @@ public static class PopularAnimeThemes
                 titleTargets.Any(target =>
                     string.Equals(target, kw, StringComparison.OrdinalIgnoreCase) ||
                     target.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+                    (kw.Length >= 3 && target.Contains(kw, StringComparison.OrdinalIgnoreCase)) ||
                     (kw.Length >= 4 && target.Length >= 4 && kw.Contains(target, StringComparison.OrdinalIgnoreCase))));
 
             if (!titleMatched)
@@ -285,14 +404,19 @@ public sealed class AnimeThemesService : IAnimeThemeService
             return result;
         }
         catch (HttpRequestException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             _serviceUnavailableUntil = DateTimeOffset.UtcNow.AddMinutes(10);
             _cache[cacheKey] = (DateTimeOffset.UtcNow.AddMinutes(10), fallback);
             return fallback;
+            throw;
         }
         catch (JsonException)
+        catch
         {
             _cache[cacheKey] = (DateTimeOffset.UtcNow.AddHours(1), fallback);
+            _serviceUnavailableUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+            _cache[cacheKey] = (DateTimeOffset.UtcNow.AddMinutes(5), fallback);
             return fallback;
         }
         finally
@@ -305,6 +429,7 @@ public sealed class AnimeThemesService : IAnimeThemeService
     {
         var clean = Regex.Replace(query, @"[^\w\s]", " ").Trim();
         if (string.IsNullOrWhiteSpace(clean) || clean.Length < 2)
+        if (string.IsNullOrWhiteSpace(clean))
             return [];
 
         try

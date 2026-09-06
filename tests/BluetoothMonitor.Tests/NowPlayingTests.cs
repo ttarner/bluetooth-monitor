@@ -90,6 +90,18 @@ public sealed class NowPlayingTests
     }
 
     [TestMethod]
+    public void NowPlayingViewModelKeepsLastTrackWhenLookupIsUnavailable()
+    {
+        var viewModel = new BluetoothMonitor.Models.NowPlayingOverlayViewModel();
+        viewModel.Apply(new NowPlayingSnapshot("Song", "Artist", "Player", ""));
+
+        viewModel.Apply(null);
+
+        Assert.AreEqual("Song", viewModel.Title);
+        Assert.IsTrue(viewModel.IsVisible);
+    }
+
+    [TestMethod]
     public void PopularAnimeThemes_FindsDirectMatches()
     {
         var matchGurenge = PopularAnimeThemes.FindMatch("Gurenge", "LiSA");

@@ -44,11 +44,14 @@ public sealed class NowPlayingOverlayViewModel : INotifyPropertyChanged
 
     public void Apply(NowPlayingSnapshot? snapshot)
     {
-        Title = snapshot?.Title ?? "";
-        Artist = snapshot?.Artist ?? "";
-        RomajiTitle = snapshot?.RomajiTitle ?? "";
-        AppName = snapshot?.AppName ?? "";
-        MediaTag = snapshot?.MediaTag ?? "";
+        if (snapshot is null)
+            return;
+
+        Title = snapshot.Title;
+        Artist = snapshot.Artist;
+        RomajiTitle = snapshot.RomajiTitle;
+        AppName = snapshot.AppName;
+        MediaTag = snapshot.MediaTag;
         OnPropertyChanged(nameof(IsVisible));
     }
 

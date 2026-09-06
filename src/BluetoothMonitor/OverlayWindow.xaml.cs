@@ -252,7 +252,7 @@ public partial class OverlayWindow : Window
         }
     }
 
-        private async Task UpdateNowPlayingAsync()
+    private async Task UpdateNowPlayingAsync()
     {
         if (_isUpdatingNowPlaying || !_viewModel.NowPlaying.IsEnabled)
             return;

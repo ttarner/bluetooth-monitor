@@ -119,4 +119,41 @@ public sealed class NowPlayingTests
         var result = await service.ClassifyAsync("Kaibutsu", "YOASOBI", "THE BOOK 2");
         Assert.AreEqual("Anime opening · BEASTARS Season 2", result);
     }
+
+    [TestMethod]
+    public void AnimeThemesMatcher_RejectsThemeWhenArtistMismatches()
+    {
+        var entry = new AnimeThemeEntry("OP", "OP1", "Demon Slayer", "Gurenge", ["LiSA"]);
+        var match = AnimeThemesMatcher.Match([entry], "Gurenge", "Someone Else");
+        Assert.AreEqual("", match);
+    }
+
+    [TestMethod]
+    public void AnimeThemesMatcher_RejectsThemeWhenTitleMismatches()
+    {
+        var entry = new AnimeThemeEntry("OP", "OP1", "Koori Zokusei", "FROZEN MIDNIGHT", ["Takao Sakuma"]);
+        var match = AnimeThemesMatcher.Match([entry], "Midnight City", "M83");
+        Assert.AreEqual("", match);
+    }
+
+    [TestMethod]
+    public void AnimeThemesMatcher_AcceptsMatchingTitleAndArtist()
+    {
+        var entry = new AnimeThemeEntry("OP", "OP1", "Tokyo Ghoul", "unravel", ["TK from Ling tosite sigure"]);
+        var match = AnimeThemesMatcher.Match([entry], "unravel", "TK from Ling tosite sigure");
+        Assert.AreEqual("Anime opening · Tokyo Ghoul", match);
+    }
+
+    [TestMethod]
+    public void PopularAnimeThemes_FindsNewlyAddedThemes()
+    {
+        var matchTaidada = PopularAnimeThemes.FindMatch("taidada", "ZUTOMAYO");
+        Assert.AreEqual("Anime ending · Dandadan", matchTaidada);
+
+        var matchChainsawBlood = PopularAnimeThemes.FindMatch("chainsaw blood", "Vaundy");
+        Assert.AreEqual("Anime ending · Chainsaw Man", matchChainsawBlood);
+
+        var matchPokemon = PopularAnimeThemes.FindMatch("めざせポケモンマスター", "Rica Matsumoto");
+        Assert.AreEqual("Anime opening · Pokémon (Original Series)", matchPokemon);
+    }
 }

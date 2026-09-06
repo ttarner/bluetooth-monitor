@@ -135,6 +135,8 @@ public static class PopularAnimeThemes
         new(["一途", "ichizu"], ["king gnu"], "Jujutsu Kaisen 0", "Jujutsu Kaisen 0", "Ending", "ED1"),
         new(["逆夢", "sakayume"], ["king gnu"], "Jujutsu Kaisen 0", "Jujutsu Kaisen 0", "Ending", "ED2"),
         new(["kick back"], ["kenshi yonezu", "yonezu kenshi"], "Chainsaw Man", "Chainsaw Man", "Opening", "OP1"),
+        new(["chainsaw blood"], ["vaundy"], "Chainsaw Man", "Chainsaw Man", "Ending", "ED1"),
+        new(["残機", "zanki", "time left"], ["zutomayo"], "Chainsaw Man", "Chainsaw Man", "Ending", "ED2"),
         new(["刃渡り2億センチ", "hawatori 2-oku centimeter"], ["maximum the hormone"], "Chainsaw Man", "Chainsaw Man", "Ending", "ED3"),
         new(["ちゅ、多様性。", "chu, tayousei"], ["ano"], "Chainsaw Man", "Chainsaw Man", "Ending", "ED7"),
         new(["ファイトソング", "fight song"], ["eve"], "Chainsaw Man", "Chainsaw Man", "Ending", "ED12"),
@@ -146,6 +148,7 @@ public static class PopularAnimeThemes
         new(["晴る", "haru", "sunny"], ["yorushika"], "Frieren: Beyond Journey's End", "Frieren: Beyond Journey's End", "Opening", "OP2"),
         new(["ミックスナッツ", "mixed nuts"], ["official hige dandism"], "SPY x FAMILY", "SPY x FAMILY", "Opening", "OP1"),
         new(["喜劇", "comedy", "kigeki"], ["gen hoshino"], "SPY x FAMILY", "SPY x FAMILY", "Ending", "ED1"),
+        new(["色彩", "shikisai"], ["yama"], "SPY x FAMILY Season 1 Part 2", "SPY x FAMILY Season 1 Part 2", "Ending", "ED2"),
         new(["souvenir"], ["bump of chicken"], "SPY x FAMILY", "SPY x FAMILY", "Opening", "OP2"),
         new(["クラクラ", "kura kura"], ["ado"], "SPY x FAMILY Season 2", "SPY x FAMILY Season 2", "Opening", "OP1"),
         new(["心臓を捧げよ", "shinzou wo sasageyo"], ["linked horizon"], "Attack on Titan Season 2", "Attack on Titan Season 2", "Opening", "OP1"),
@@ -163,14 +166,18 @@ public static class PopularAnimeThemes
         new(["ギターと孤独と蒼い惑星", "guitar to kodoku to aoi hoshi"], ["kessoku band"], "Bocchi the Rock!", "Bocchi the Rock!", "Insert", "Insert"),
         new(["bling-bang-bang-born"], ["creepy nuts"], "Mashle: Magic and Muscles", "Mashle: Magic and Muscles", "Opening", "OP2"),
         new(["オトノケ", "otonoke"], ["creepy nuts"], "Dandadan", "Dandadan", "Opening", "OP1"),
+        new(["taidada"], ["zutomayo"], "Dandadan", "Dandadan", "Ending", "ED1"),
         new(["前前前世", "zenzenzense"], ["radwimps"], "Your Name. (君の名は。)", "Your Name.", "Theme Song", "Theme"),
+        new(["なんでもないや", "nandemonaiya"], ["radwimps"], "Your Name. (君の名は。)", "Your Name.", "Ending", "ED"),
         new(["スパークル", "sparkle"], ["radwimps"], "Your Name. (君の名は。)", "Your Name.", "Theme Song", "Theme"),
         new(["すずめ", "suzume"], ["radwimps", "toaka"], "Suzume (すずめの戸締まり)", "Suzume", "Theme Song", "Theme"),
         new(["crossing field"], ["lisa"], "Sword Art Online", "Sword Art Online", "Opening", "OP1"),
         new(["again"], ["yui"], "Fullmetal Alchemist: Brotherhood", "Fullmetal Alchemist: Brotherhood", "Opening", "OP1"),
+        new(["rain", "レイン"], ["sid"], "Fullmetal Alchemist: Brotherhood", "Fullmetal Alchemist: Brotherhood", "Opening", "OP5"),
         new(["butterfly"], ["koji wada"], "Digimon Adventure", "Digimon Adventure", "Opening", "OP1"),
         new(["cha-la head-cha-la"], ["hironobu kageyama"], "Dragon Ball Z", "Dragon Ball Z", "Opening", "OP1"),
         new(["dan dan 心魅かれてく", "dan dan kokoro hikareteku"], ["field of view"], "Dragon Ball GT", "Dragon Ball GT", "Opening", "OP1"),
+        new(["めざせポケモンマスター", "mezase pokemon master"], ["rica matsumoto"], "Pokémon (Original Series)", "Pokémon (Original Series)", "Opening", "OP1"),
         new(["only my railgun"], ["fripside"], "A Certain Scientific Railgun", "A Certain Scientific Railgun", "Opening", "OP1")
     ];
 
@@ -198,7 +205,10 @@ public static class PopularAnimeThemes
         foreach (var entry in Catalog)
         {
             var titleMatched = entry.Keywords.Any(kw =>
-                titleTargets.Any(target => target.Contains(kw, StringComparison.OrdinalIgnoreCase) || kw.Contains(target, StringComparison.OrdinalIgnoreCase)));
+                titleTargets.Any(target =>
+                    string.Equals(target, kw, StringComparison.OrdinalIgnoreCase) ||
+                    target.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+                    (kw.Length >= 4 && target.Length >= 4 && kw.Contains(target, StringComparison.OrdinalIgnoreCase))));
 
             if (!titleMatched)
                 continue;
@@ -206,7 +216,8 @@ public static class PopularAnimeThemes
             if (entry.ArtistKeywords is { Length: > 0 } && !string.IsNullOrWhiteSpace(cleanArtist))
             {
                 var artistMatched = entry.ArtistKeywords.Any(akw =>
-                    cleanArtist.Contains(akw, StringComparison.OrdinalIgnoreCase) || akw.Contains(cleanArtist, StringComparison.OrdinalIgnoreCase));
+                    cleanArtist.Contains(akw, StringComparison.OrdinalIgnoreCase) ||
+                    akw.Contains(cleanArtist, StringComparison.OrdinalIgnoreCase));
 
                 if (!artistMatched)
                     continue;
@@ -256,16 +267,13 @@ public sealed class AnimeThemesService : IAnimeThemeService
             foreach (var query in AnimeThemesQueryVariants.Get(title))
             {
                 var tags = await SearchSongAsync(query, cancellationToken);
-                var tag = AnimeThemesMatcher.Match(tags, title, artist);
-                if (!string.IsNullOrWhiteSpace(tag))
+                var matchedTheme = AnimeThemesMatcher.FindMatchingTheme(tags, title, artist);
+                if (matchedTheme is not null)
                 {
                     // Enrich anime name via Kitsu if available
-                    var theme = tags.FirstOrDefault(t => t.Type is "OP" or "ED");
-                    if (theme is not null && !string.IsNullOrWhiteSpace(theme.AnimeName))
-                    {
-                        var enrichedName = await EnrichAnimeTitleAsync(theme.AnimeName, cancellationToken);
-                        tag = $"Anime {(theme.Type == "OP" ? "opening" : "ending")} · {enrichedName}";
-                    }
+                    var enrichedName = await EnrichAnimeTitleAsync(matchedTheme.AnimeName, cancellationToken);
+                    var type = matchedTheme.Type == "OP" ? "opening" : "ending";
+                    var tag = $"Anime {type} · {enrichedName}";
 
                     _cache[cacheKey] = (DateTimeOffset.UtcNow.AddHours(12), tag);
                     return tag;
@@ -301,24 +309,28 @@ public sealed class AnimeThemesService : IAnimeThemeService
 
         try
         {
-            // 1. Try search?q= full search endpoint
-            using var searchResponse = await AnimeThemesClient.GetAsync(
-                $"search?q={Uri.EscapeDataString(clean)}&include[song]=animethemes.anime&fields[search]=songs,animethemes",
+            var list = new List<AnimeThemeEntry>();
+
+            // 1. Direct song title filter lookup on AnimeThemes API
+            using var filterResponse = await AnimeThemesClient.GetAsync(
+                $"song?filter%5Btitle%5D={Uri.EscapeDataString(query)}&include=animethemes.anime,artists",
                 cancellationToken);
 
-            if (searchResponse.IsSuccessStatusCode)
+            if (filterResponse.IsSuccessStatusCode)
             {
-                using var searchJson = await JsonDocument.ParseAsync(await searchResponse.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
-                if (searchJson.RootElement.TryGetProperty("search", out var searchObj) && searchObj.TryGetProperty("songs", out var songs) && songs.ValueKind == JsonValueKind.Array)
+                using var filterJson = await JsonDocument.ParseAsync(await filterResponse.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+                if (filterJson.RootElement.TryGetProperty("songs", out var songs) && songs.ValueKind == JsonValueKind.Array)
                 {
-                    var list = new List<AnimeThemeEntry>();
                     foreach (var song in songs.EnumerateArray())
                     {
+                        var songTitle = song.TryGetProperty("title", out var st) ? st.GetString() ?? "" : "";
+                        var artists = ExtractArtists(song);
+
                         if (song.TryGetProperty("animethemes", out var themes) && themes.ValueKind == JsonValueKind.Array)
                         {
                             foreach (var theme in themes.EnumerateArray())
                             {
-                                var entry = ParseTheme(theme);
+                                var entry = ParseTheme(theme, songTitle, artists);
                                 if (entry is not null)
                                     list.Add(entry);
                             }
@@ -330,25 +342,45 @@ public sealed class AnimeThemesService : IAnimeThemeService
                 }
             }
 
-            // 2. Fallback to song?filter[title]= endpoint
-            using var filterResponse = await AnimeThemesClient.GetAsync(
-                $"song?filter%5Btitle%5D={Uri.EscapeDataString(query)}&include=animethemes.anime",
+            // 2. Fallback to search?q= full-text search endpoint, filtering out unrelated songs
+            using var searchResponse = await AnimeThemesClient.GetAsync(
+                $"search?q={Uri.EscapeDataString(clean)}&include[song]=animethemes.anime,artists&fields[search]=songs,animethemes",
                 cancellationToken);
 
-            if (filterResponse.IsSuccessStatusCode)
+            if (searchResponse.IsSuccessStatusCode)
             {
-                using var filterJson = await JsonDocument.ParseAsync(await filterResponse.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
-                if (filterJson.RootElement.TryGetProperty("songs", out var songs) && songs.ValueKind == JsonValueKind.Array)
+                using var searchJson = await JsonDocument.ParseAsync(await searchResponse.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+                if (searchJson.RootElement.TryGetProperty("search", out var searchObj) && searchObj.TryGetProperty("songs", out var songs) && songs.ValueKind == JsonValueKind.Array)
                 {
-                    return songs.EnumerateArray()
-                        .Where(song => song.TryGetProperty("title", out var songTitle)
-                            && string.Equals(songTitle.GetString(), query, StringComparison.OrdinalIgnoreCase))
-                        .SelectMany(song => song.TryGetProperty("animethemes", out var themes) && themes.ValueKind == JsonValueKind.Array
-                            ? themes.EnumerateArray().Select(ParseTheme)
-                            : [])
-                        .Where(theme => theme is not null)
-                        .Select(theme => theme!)
-                        .ToArray();
+                    foreach (var song in songs.EnumerateArray())
+                    {
+                        var songTitle = song.TryGetProperty("title", out var st) ? st.GetString() ?? "" : "";
+                        if (string.IsNullOrWhiteSpace(songTitle))
+                            continue;
+
+                        // Verify songTitle genuinely matches query to avoid false positives on common words
+                        var isTitleMatch = string.Equals(songTitle, query, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(songTitle, clean, StringComparison.OrdinalIgnoreCase)
+                            || (songTitle.Length >= 4 && query.Contains(songTitle, StringComparison.OrdinalIgnoreCase))
+                            || (query.Length >= 4 && songTitle.Contains(query, StringComparison.OrdinalIgnoreCase));
+
+                        if (!isTitleMatch)
+                            continue;
+
+                        var artists = ExtractArtists(song);
+                        if (song.TryGetProperty("animethemes", out var themes) && themes.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var theme in themes.EnumerateArray())
+                            {
+                                var entry = ParseTheme(theme, songTitle, artists);
+                                if (entry is not null)
+                                    list.Add(entry);
+                            }
+                        }
+                    }
+
+                    if (list.Count > 0)
+                        return list;
                 }
             }
         }
@@ -357,6 +389,21 @@ public sealed class AnimeThemesService : IAnimeThemeService
             // Non-blocking fallback on network or API failure
         }
 
+        return [];
+    }
+
+    private static string[] ExtractArtists(JsonElement song)
+    {
+        if (song.TryGetProperty("artists", out var arts) && arts.ValueKind == JsonValueKind.Array)
+        {
+            var artists = new List<string>();
+            foreach (var art in arts.EnumerateArray())
+            {
+                if (art.TryGetProperty("name", out var artName) && !string.IsNullOrWhiteSpace(artName.GetString()))
+                    artists.Add(artName.GetString()!);
+            }
+            return artists.ToArray();
+        }
         return [];
     }
 
@@ -408,7 +455,7 @@ public sealed class AnimeThemesService : IAnimeThemeService
         return animeName;
     }
 
-    private static AnimeThemeEntry? ParseTheme(JsonElement theme)
+    private static AnimeThemeEntry? ParseTheme(JsonElement theme, string songTitle = "", string[]? songArtists = null)
     {
         if (!theme.TryGetProperty("type", out var type)
             || !theme.TryGetProperty("slug", out var slug)
@@ -416,7 +463,7 @@ public sealed class AnimeThemesService : IAnimeThemeService
             || !anime.TryGetProperty("name", out var animeName))
             return null;
 
-        return new AnimeThemeEntry(type.GetString() ?? "", slug.GetString() ?? "", animeName.GetString() ?? "");
+        return new AnimeThemeEntry(type.GetString() ?? "", slug.GetString() ?? "", animeName.GetString() ?? "", songTitle, songArtists);
     }
 
     private static HttpClient CreateHttpClient(string baseAddress)
@@ -436,7 +483,12 @@ public sealed class AnimeThemesService : IAnimeThemeService
     }
 }
 
-public sealed record AnimeThemeEntry(string Type, string Slug, string AnimeName);
+public sealed record AnimeThemeEntry(
+    string Type,
+    string Slug,
+    string AnimeName,
+    string SongTitle = "",
+    string[]? SongArtists = null);
 
 public static class AnimeThemesQueryVariants
 {
@@ -470,9 +522,57 @@ public static class AnimeThemesQueryVariants
 
 public static class AnimeThemesMatcher
 {
+    public static AnimeThemeEntry? FindMatchingTheme(IEnumerable<AnimeThemeEntry> themes, string title, string artist)
+    {
+        var cleanTitle = (title ?? "").Trim();
+        var cleanArtist = (artist ?? "").Trim();
+        var variants = AnimeThemesQueryVariants.Get(cleanTitle).ToArray();
+
+        AnimeThemeEntry? fallbackTheme = null;
+
+        foreach (var theme in themes)
+        {
+            if (theme.Type is not ("OP" or "ED"))
+                continue;
+
+            // If entry has song title, check title match
+            if (!string.IsNullOrWhiteSpace(theme.SongTitle))
+            {
+                var titleMatched = variants.Any(v =>
+                    string.Equals(v, theme.SongTitle, StringComparison.OrdinalIgnoreCase) ||
+                    v.Contains(theme.SongTitle, StringComparison.OrdinalIgnoreCase) ||
+                    (theme.SongTitle.Length >= 4 && v.Length >= 4 && theme.SongTitle.Contains(v, StringComparison.OrdinalIgnoreCase)));
+
+                if (!titleMatched)
+                    continue;
+            }
+
+            // If entry has artists and artist was provided, check artist match
+            if (theme.SongArtists is { Length: > 0 } && !string.IsNullOrWhiteSpace(cleanArtist))
+            {
+                var artistMatched = theme.SongArtists.Any(sa =>
+                    cleanArtist.Contains(sa, StringComparison.OrdinalIgnoreCase) ||
+                    sa.Contains(cleanArtist, StringComparison.OrdinalIgnoreCase));
+
+                if (artistMatched)
+                    return theme;
+
+                continue;
+            }
+
+            fallbackTheme ??= theme;
+        }
+
+        return fallbackTheme;
+    }
+
     public static string Match(IEnumerable<AnimeThemeEntry> themes, string title, string artist)
     {
-        var theme = themes.FirstOrDefault(item => item.Type is "OP" or "ED");
-        return theme is null ? "" : $"Anime {(theme.Type == "OP" ? "opening" : "ending")} · {theme.AnimeName}";
+        var matched = FindMatchingTheme(themes, title, artist);
+        if (matched is null)
+            return "";
+
+        var type = matched.Type == "OP" ? "opening" : "ending";
+        return $"Anime {type} · {matched.AnimeName}";
     }
 }

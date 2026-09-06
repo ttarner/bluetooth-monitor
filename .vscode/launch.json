@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": ".NET: Bluetooth Monitor",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "Build [Debug]",
+      "program": "${workspaceFolder}/src/BluetoothMonitor/bin/Debug/net8.0-windows10.0.19041.0/BluetoothMonitor.exe",
+      "cwd": "${workspaceFolder}/src/BluetoothMonitor",
+      "stopAtEntry": false
+    }
+  ]
+}

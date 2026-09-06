@@ -1,0 +1,8 @@
+bin/
+obj/
+artifacts/
+.diagnostics/
+.vs/
+*.user
+*.suo
+.tmp/

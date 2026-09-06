@@ -1,0 +1,151 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore BluetoothMonitor.sln
+
+      - name: Publish single-file executable
+        run: >
+          dotnet publish src/BluetoothMonitor/BluetoothMonitor.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          --output artifacts/win-x64
+
+      - name: Package zip asset
+        shell: pwsh
+        run: |
+          $releaseRoot = Join-Path $PWD 'artifacts/package/BluetoothMonitor'
+          New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
+          Copy-Item 'artifacts/win-x64/BluetoothMonitor.exe' -Destination (Join-Path $releaseRoot 'BluetoothMonitor.exe') -Force
+
+      - name: Prepare release metadata
+        shell: pwsh
+        run: |
+          $shortSha = "${env:GITHUB_SHA}".Substring(0, 7)
+          $releaseDate = Get-Date -AsUTC -Format 'yyyy.MM.dd'
+          $releaseTag = "$releaseDate-$shortSha"
+          $releaseArch = 'win-x64'
+          $zipName = "BluetoothMonitor-$releaseTag-$releaseArch.zip"
+          $zipPath = Join-Path $PWD "artifacts/$zipName"
+          if (Test-Path $zipPath) {
+            Remove-Item -LiteralPath $zipPath -Force
+          }
+          Compress-Archive -Path 'artifacts/package/BluetoothMonitor' -DestinationPath $zipPath
+          $previousTag = (git tag --sort=-creatordate | Where-Object { $_ -ne $releaseTag } | Select-Object -First 1)
+          $commitRange = if ($previousTag) { "$previousTag..HEAD" } else { "HEAD" }
+          $commitSubjects = git log $commitRange --pretty=format:%s
+
+          $featureCommits = @()
+          $fixCommits = @()
+
+          foreach ($subject in $commitSubjects) {
+            if ([string]::IsNullOrWhiteSpace($subject)) { continue }
+
+            if ($subject -match '^(fix|bugfix|hotfix)(\(.+\))?:') {
+              $fixCommits += "- $subject"
+            }
+            else {
+              $featureCommits += "- $subject"
+            }
+          }
+
+          if ($featureCommits.Count -eq 0) {
+            $featureCommits = @('- Maintenance updates and internal improvements.')
+          }
+
+          if ($fixCommits.Count -eq 0) {
+            $fixCommits = @('- No dedicated fixes in this release.')
+          }
+
+          $bodyLines = @(
+            "## Note",
+            "",
+            "- Windows single-file release build for **Bluetooth Battery Monitor**.",
+            "- Assets included: `BluetoothMonitor.exe` and `$zipName`.",
+            "- The zip contains a `BluetoothMonitor` folder with the executable inside.",
+            "",
+            "## What's Changed",
+            "",
+            "### Features & Improvements",
+            $featureCommits,
+            "",
+            "### Fixes",
+            $fixCommits
+          )
+
+          if ($previousTag) {
+            $bodyLines += @(
+              "",
+              "### Full Changelog",
+              "",
+              "https://github.com/${env:GITHUB_REPOSITORY}/compare/$previousTag...$releaseTag"
+            )
+          }
+          else {
+            $bodyLines += @(
+              "",
+              "### Full Changelog",
+              "",
+              "Initial release."
+            )
+          }
+
+          $bodyPath = Join-Path $PWD 'artifacts/release-notes.md'
+          $bodyLines | Set-Content -Path $bodyPath -Encoding utf8
+
+          "RELEASE_TAG=$releaseTag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "RELEASE_NAME=$releaseDate ($shortSha)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "RELEASE_ASSET=artifacts/win-x64/BluetoothMonitor.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "RELEASE_ZIP_ASSET=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "RELEASE_BODY_PATH=$bodyPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Create or update GitHub release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${env:RELEASE_TAG}"
+          $title = "${env:RELEASE_NAME}"
+          $asset = "${env:RELEASE_ASSET}"
+          $zipAsset = "${env:RELEASE_ZIP_ASSET}"
+          $notes = "${env:RELEASE_BODY_PATH}"
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release edit $tag --title $title --notes-file $notes --latest
+            gh release upload $tag $asset --clobber
+            gh release upload $tag $zipAsset --clobber
+          }
+          else {
+            gh release create $tag $asset $zipAsset --title $title --notes-file $notes --latest
+          }

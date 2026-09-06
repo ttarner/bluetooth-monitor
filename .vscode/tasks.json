@@ -1,0 +1,93 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Restore",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "restore",
+        "${workspaceFolder}/BluetoothMonitor.sln"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Build [Debug]",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/BluetoothMonitor.sln",
+        "--configuration",
+        "Debug"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Build [Release]",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/BluetoothMonitor.sln",
+        "--configuration",
+        "Release"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Test",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "test",
+        "${workspaceFolder}/BluetoothMonitor.sln",
+        "--configuration",
+        "Debug",
+        "--no-restore"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Run App",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "run",
+        "--project",
+        "${workspaceFolder}/src/BluetoothMonitor/BluetoothMonitor.csproj"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Publish [win-x64]",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "publish",
+        "${workspaceFolder}/src/BluetoothMonitor/BluetoothMonitor.csproj",
+        "--configuration",
+        "Release",
+        "--runtime",
+        "win-x64",
+        "--self-contained",
+        "false",
+        "--output",
+        "${workspaceFolder}/artifacts/win-x64"
+      ],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

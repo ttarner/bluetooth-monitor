@@ -199,6 +199,15 @@ public sealed record AnimeThemeEntry(string Type, string Slug, string AnimeName)
 
 public static class AnimeThemesQueryVariants
 {
+    private static readonly HttpClient TranslationClient = CreateTranslationClient();
+
+    private static HttpClient CreateTranslationClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("BluetoothMonitor", "1.0"));
+        return client;
+    }
+
     public static IEnumerable<string> Get(string title)
     {
         var variants = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { title };
@@ -210,48 +219,43 @@ public static class AnimeThemesQueryVariants
         {
             // Add romanized version
             var romanizedTitle = JapaneseTitleRomanizer.Romanize(variant);
-            if (!string.Equals(romanizedTitle, variant, StringComparison.OrdinalIgnoreCase))
+            var isJapanese = !string.Equals(romanizedTitle, variant, StringComparison.OrdinalIgnoreCase);
+            if (isJapanese)
                 variants.Add(romanizedTitle);
 
             // Add English translation variants using public API
-            foreach (var translated in GetEnglishTranslationsAsync(variant).Result)
+            if (isJapanese)
             {
-                if (!variants.Contains(translated, StringComparer.OrdinalIgnoreCase))
-                    variants.Add(translated);
+                foreach (var translated in GetEnglishTranslationsAsync(variant).GetAwaiter().GetResult())
+                {
+                    if (!variants.Contains(translated, StringComparer.OrdinalIgnoreCase))
+                        variants.Add(translated);
+                }
             }
         }
 
         return variants;
     }
 
-    private static IEnumerable<string> GetEnglishTranslationsAsync(string japaneseText)
+    private static async Task<IEnumerable<string>> GetEnglishTranslationsAsync(string japaneseText)
     {
+        var results = new List<string>();
         // Use MyMemory Translation API (free, no key required for limited usage)
         const string apiUrl = "https://api.mymemory.translated.net/get";
-        
-        using var httpClient = new HttpClient();
+
         try
         {
-            var response = httpClient.GetAsync(apiUrl + $"?q={Uri.EscapeDataString(japaneseText)}&langpair=ja|en")
-                .Wait(TimeSpan.FromSeconds(5));
-            
-            var content = response.Content.ReadAsStringAsync().Result();
-            // Parse JSON response: {"responseData":{"translatedText":"...", "detectedSourceLanguage":"..."}}
-            var jsonStart = content.IndexOf("{", StringComparison.Ordinal);
-            if (jsonStart >= 0)
+            using var response = await TranslationClient.GetAsync(apiUrl + $"?q={Uri.EscapeDataString(japaneseText)}&langpair=ja|en");
+            if (response.IsSuccessStatusCode)
             {
-                var jsonEnd = content.LastIndexOf("}", StringComparison.Ordinal);
-                if (jsonEnd > jsonStart)
+                var content = await response.Content.ReadAsStringAsync();
+                using var json = JsonDocument.Parse(content);
+                if (json.RootElement.TryGetProperty("responseData", out var responseData)
+                    && responseData.TryGetProperty("translatedText", out var textProp))
                 {
-                    var jsonString = content.Substring(jsonStart, jsonEnd - jsonStart + 1);
-                    var startIndex = jsonString.IndexOf("\"translatedText\":\"", StringComparison.Ordinal) + 16;
-                    var endIndex = jsonString.IndexOf("\"", StringComparison.Ordinal, startIndex);
-                    if (startIndex >= 0 && endIndex > startIndex)
-                    {
-                        var translation = jsonString.Substring(startIndex, endIndex - startIndex).Trim();
-                        if (!string.IsNullOrWhiteSpace(translation))
-                            yield return translation;
-                    }
+                    var translation = textProp.GetString()?.Trim();
+                    if (!string.IsNullOrWhiteSpace(translation))
+                        results.Add(translation);
                 }
             }
         }
@@ -259,6 +263,8 @@ public static class AnimeThemesQueryVariants
         {
             // API call failed or timed out, silently ignore (caller will use fallback)
         }
+
+        return results;
     }
 }
 

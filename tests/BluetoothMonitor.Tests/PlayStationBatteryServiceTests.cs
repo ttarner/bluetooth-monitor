@@ -55,7 +55,7 @@ public sealed class PlayStationBatteryServiceTests
     {
         var report = new byte[64];
         report[0] = 0x01;
-        report[53] = 0x01;
+        report[53] = 0x00;
 
         var status = PlayStationBatteryService.ParseDualSenseStatus(report);
 

@@ -36,21 +36,36 @@ public sealed class WindowsNowPlayingService : INowPlayingService
         {
             var manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
             if (manager is null)
+            {
+                SimpleLogger.Log("manager is null");
                 return null;
+            }
 
             // 1. Check current active session first
             var currentSession = manager.GetCurrentSession();
             if (currentSession is not null)
             {
+                SimpleLogger.Log($"Found currentSession: {currentSession.SourceAppUserModelId}");
                 var currentSnapshot = await TryExtractSnapshotAsync(currentSession, cancellationToken);
                 if (currentSnapshot is not null)
+                {
+                    SimpleLogger.Log($"currentSnapshot extracted: {currentSnapshot.Title} - {currentSnapshot.Artist}");
                     return currentSnapshot;
+                }
+                SimpleLogger.Log("currentSnapshot was null");
+            }
+            else
+            {
+                SimpleLogger.Log("currentSession is null");
             }
 
             // 2. Fall back to inspecting all sessions: check playing sessions first, then paused
             var sessions = manager.GetSessions();
             if (sessions is null || sessions.Count == 0)
+            {
+                SimpleLogger.Log("sessions is null or empty");
                 return null;
+            }
 
             foreach (var session in sessions)
             {
@@ -61,6 +76,7 @@ public sealed class WindowsNowPlayingService : INowPlayingService
                     var playbackInfo = session.GetPlaybackInfo();
                     if (playbackInfo?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
                     {
+                        SimpleLogger.Log($"Found playing session: {session.SourceAppUserModelId}");
                         var snapshot = await TryExtractSnapshotAsync(session, cancellationToken);
                         if (snapshot is not null)
                             return snapshot;
@@ -81,6 +97,7 @@ public sealed class WindowsNowPlayingService : INowPlayingService
                     var playbackInfo = session.GetPlaybackInfo();
                     if (playbackInfo?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused)
                     {
+                        SimpleLogger.Log($"Found paused session: {session.SourceAppUserModelId}");
                         var snapshot = await TryExtractSnapshotAsync(session, cancellationToken);
                         if (snapshot is not null)
                             return snapshot;
@@ -96,11 +113,13 @@ public sealed class WindowsNowPlayingService : INowPlayingService
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
+            SimpleLogger.Log($"GetCurrentAsync exception: {ex}");
             return null;
         }
 
+        SimpleLogger.Log("Returning null from GetCurrentAsync");
         return null;
     }
 

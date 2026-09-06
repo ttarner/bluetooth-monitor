@@ -252,26 +252,25 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private async Task UpdateNowPlayingAsync()
+        private async Task UpdateNowPlayingAsync()
     {
-        if (!_viewModel.NowPlaying.IsEnabled)
         if (_isUpdatingNowPlaying || !_viewModel.NowPlaying.IsEnabled)
             return;
 
         _isUpdatingNowPlaying = true;
         try
         {
-            _viewModel.NowPlaying.Apply(await _nowPlayingService.GetCurrentAsync(_nowPlayingCancellation.Token));
             var snapshot = await _nowPlayingService.GetCurrentAsync(_nowPlayingCancellation.Token);
+            SimpleLogger.Log($"UpdateNowPlayingAsync snapshot title: {snapshot?.Title}");
             _viewModel.NowPlaying.Apply(snapshot);
+            SimpleLogger.Log($"UpdateNowPlayingAsync applied, HasTrack: {_viewModel.NowPlaying.HasTrack}, IsVisible: {_viewModel.NowPlaying.IsVisible}");
         }
         catch (OperationCanceledException) when (_nowPlayingCancellation.IsCancellationRequested)
         {
         }
-        catch
+        catch (Exception ex)
         {
-            _viewModel.NowPlaying.Apply(null);
-            // Do not discard currently displayed track on a transient polling error
+            SimpleLogger.Log($"UpdateNowPlayingAsync Error: {ex}");
         }
         finally
         {
@@ -471,3 +470,4 @@ public partial class OverlayWindow : Window
         int cy,
         uint uFlags);
 }
+

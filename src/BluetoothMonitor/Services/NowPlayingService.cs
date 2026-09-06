@@ -223,7 +223,6 @@ public static class PopularAnimeThemes
 
 public sealed class AnimeThemesService : IAnimeThemeService
 {
-    private static readonly HttpClient HttpClient = CreateHttpClient();
     private static readonly HttpClient AnimeThemesClient = CreateHttpClient("https://api.animethemes.moe/");
     private static readonly HttpClient KitsuClient = CreateKitsuClient();
     private static readonly ConcurrentDictionary<string, string> EnrichedTitleCache = new(StringComparer.OrdinalIgnoreCase);
@@ -296,21 +295,6 @@ public sealed class AnimeThemesService : IAnimeThemeService
 
     private static async Task<IReadOnlyList<AnimeThemeEntry>> SearchSongAsync(string query, CancellationToken cancellationToken)
     {
-        using var response = await HttpClient.GetAsync(
-            $"song?filter%5Btitle%5D={Uri.EscapeDataString(query)}&include=animethemes.anime",
-            cancellationToken);
-        response.EnsureSuccessStatusCode();
-        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
-        var jsonStr = json.RootElement.ToString();
-        return json.RootElement.GetProperty("songs").EnumerateArray()
-            .Where(song => song.TryGetProperty("title", out var songTitle)
-                && string.Equals(songTitle.GetString(), query, StringComparison.OrdinalIgnoreCase))
-            .SelectMany(song => song.TryGetProperty("animethemes", out var themes) && themes.ValueKind == JsonValueKind.Array
-                ? themes.EnumerateArray().Select(ParseTheme)
-                : [])
-            .Where(theme => theme is not null)
-            .Select(theme => theme!)
-            .ToArray();
         var clean = Regex.Replace(query, @"[^\w\s]", " ").Trim();
         if (string.IsNullOrWhiteSpace(clean) || clean.Length < 2)
             return [];
@@ -435,10 +419,8 @@ public sealed class AnimeThemesService : IAnimeThemeService
         return new AnimeThemeEntry(type.GetString() ?? "", slug.GetString() ?? "", animeName.GetString() ?? "");
     }
 
-    private static HttpClient CreateHttpClient()
     private static HttpClient CreateHttpClient(string baseAddress)
     {
-        var client = new HttpClient { BaseAddress = new Uri("https://api.animethemes.moe/"), Timeout = TimeSpan.FromSeconds(5) };
         var client = new HttpClient { BaseAddress = new Uri(baseAddress), Timeout = TimeSpan.FromSeconds(4) };
         client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("BluetoothMonitor", "1.0"));
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -458,15 +440,6 @@ public sealed record AnimeThemeEntry(string Type, string Slug, string AnimeName)
 
 public static class AnimeThemesQueryVariants
 {
-    private static readonly HttpClient TranslationClient = CreateTranslationClient();
-
-    private static HttpClient CreateTranslationClient()
-    {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("BluetoothMonitor", "1.0"));
-        return client;
-    }
-
     public static IEnumerable<string> Get(string title)
     {
         var variants = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { title };
@@ -482,20 +455,9 @@ public static class AnimeThemesQueryVariants
         {
             // Add romanized version
             var romanizedTitle = JapaneseTitleRomanizer.Romanize(variant);
-            var isJapanese = !string.Equals(romanizedTitle, variant, StringComparison.OrdinalIgnoreCase);
-            if (isJapanese)
             if (!string.Equals(romanizedTitle, variant, StringComparison.OrdinalIgnoreCase))
             {
                 variants.Add(romanizedTitle);
-
-            // Add English translation variants using public API
-            if (isJapanese)
-            {
-                foreach (var translated in GetEnglishTranslationsAsync(variant).GetAwaiter().GetResult())
-                {
-                    if (!variants.Contains(translated, StringComparer.OrdinalIgnoreCase))
-                        variants.Add(translated);
-                }
                 var romParenIndex = romanizedTitle.IndexOfAny(['(', '[']);
                 if (romParenIndex > 0)
                     variants.Add(romanizedTitle[..romParenIndex].Trim());
@@ -503,36 +465,6 @@ public static class AnimeThemesQueryVariants
         }
 
         return variants;
-    }
-
-    private static async Task<IEnumerable<string>> GetEnglishTranslationsAsync(string japaneseText)
-    {
-        var results = new List<string>();
-        // Use MyMemory Translation API (free, no key required for limited usage)
-        const string apiUrl = "https://api.mymemory.translated.net/get";
-
-        try
-        {
-            using var response = await TranslationClient.GetAsync(apiUrl + $"?q={Uri.EscapeDataString(japaneseText)}&langpair=ja|en");
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                using var json = JsonDocument.Parse(content);
-                if (json.RootElement.TryGetProperty("responseData", out var responseData)
-                    && responseData.TryGetProperty("translatedText", out var textProp))
-                {
-                    var translation = textProp.GetString()?.Trim();
-                    if (!string.IsNullOrWhiteSpace(translation))
-                        results.Add(translation);
-                }
-            }
-        }
-        catch
-        {
-            // API call failed or timed out, silently ignore (caller will use fallback)
-        }
-
-        return results;
     }
 }
 
